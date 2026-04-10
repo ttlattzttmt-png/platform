@@ -1778,12 +1778,12 @@ try {
   if (typeof firebase !== 'undefined') {
     firebase.initializeApp(firebaseConfig);
     database = firebase.database();
-    console.log('✅ Firebase initialized successfully');
+    console.log('Firebase initialized successfully');
   } else {
-    console.error('❌ Firebase SDK not loaded');
+    console.error('Firebase SDK not loaded');
   }
 } catch (err) {
-  console.error('❌ Firebase initialization error:', err);
+  console.error('Firebase initialization error:', err);
 }
 
 /* ============================================================
@@ -1802,13 +1802,13 @@ const DB = {
   },
 
   set(key, val) {
-    console.log(`💾 Setting ${key}:`, val);
+    console.log('Setting ' + key + ':', val);
     this.cache[key] = val;
     if (this.useFirebase && database) {
       return database.ref('data/' + key).set(val).then(() => {
-        console.log(`✅ Saved ${key} to Firebase`);
+        console.log('Saved ' + key + ' to Firebase');
       }).catch(err => {
-        console.error(`❌ Firebase write error for ${key}:`, err);
+        console.error('Firebase write error for ' + key + ':', err);
         this.useFirebase = false;
       });
     }
@@ -1835,46 +1835,46 @@ const DB = {
   },
 
   init() {
-    console.log('🔄 Starting DB.init()...');
+    console.log('Starting DB.init()...');
     const keys = ['users', 'courses', 'videos', 'exams', 'codes', 'enrollments', 'examResults', 'initialized'];
     const promises = keys.map(key => {
       if (this.useFirebase && database) {
-        console.log(`📡 Loading ${key} from Firebase...`);
+        console.log('Loading ' + key + ' from Firebase...');
         return database.ref('data/' + key).once('value')
           .then(snapshot => {
             const fbVal = snapshot.val();
             if (fbVal !== null) {
               this.cache[key] = fbVal;
-              console.log(`✅ Loaded ${key} from Firebase:`, fbVal);
+              console.log('Loaded ' + key + ' from Firebase:', fbVal);
             } else {
-              console.log(`⚠️ No data for ${key} in Firebase`);
+              console.log('No data for ' + key + ' in Firebase');
             }
             if (key === 'initialized' && !this.cache[key]) {
-              console.log('🌱 Seeding initial data...');
+              console.log('Seeding initial data...');
               this.seedInitialData();
             }
           })
           .catch(err => {
-            console.error(`❌ Firebase init error for ${key}:`, err);
+            console.error('Firebase init error for ' + key + ':', err);
             this.useFirebase = false;
             if (key === 'initialized' && !this.cache[key]) {
-              console.log('🌱 Seeding initial data (fallback)...');
+              console.log('Seeding initial data (fallback)...');
               this.seedInitialData();
             }
           });
       }
 
       if (key === 'initialized' && !this.cache[key]) {
-        console.log('🌱 Seeding initial data (no Firebase)...');
+        console.log('Seeding initial data (no Firebase)...');
         this.seedInitialData();
       }
       return Promise.resolve();
     });
 
     return Promise.all(promises).then(() => {
-      console.log('🎉 DB.init() completed');
+      console.log('DB.init() completed');
       if (this.useFirebase) {
-        console.log('🔄 Setting up real-time listeners...');
+        console.log('Setting up real-time listeners...');
         keys.forEach(key => this.listen(key));
       }
     });
@@ -3511,9 +3511,9 @@ function createParticles() {
    INIT
    ============================================================ */
 async function init() {
-  console.log('🚀 Starting app initialization...');
+  console.log('Starting app initialization...');
   await DB.init();
-  console.log('🎨 Rendering UI...');
+  console.log('Rendering UI...');
   createParticles();
   updateHomeStats();
   renderPublicCourses();
@@ -3522,7 +3522,7 @@ async function init() {
   // Check existing session
   const session = getSession();
   if (session) {
-    console.log('👤 Found existing session:', session);
+    console.log('Found existing session:', session);
     currentUser = session;
     if (session.role === 'admin') {
       showPage('page-admin');
@@ -3532,9 +3532,9 @@ async function init() {
       studentNav('dashboard');
     }
   } else {
-    console.log('👤 No existing session found');
+    console.log('No existing session found');
   }
-  console.log('✅ App initialization complete');
+  console.log('App initialization complete');
 }
 
 init();
