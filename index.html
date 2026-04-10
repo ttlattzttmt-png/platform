@@ -7,6 +7,11 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800;900&family=Tajawal:wght@300;400;500;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js"></script>
+
 <style>
 /* ============================================
    VARIABLES & RESET
@@ -1758,34 +1763,89 @@ tr:hover td { background: var(--hover-bg); }
 
 <script>
 /* ============================================================
-   DATABASE (localStorage-based)
+   FIREBASE CONFIGURATION
+   ============================================================ */
+const firebaseConfig = {
+  apiKey: "AIzaSyBMartkuThDIjP-VRsQbHKh6kBtcR_7oJU",
+  authDomain: "platform-b348c.firebaseapp.com",
+  projectId: "platform-b348c",
+  storageBucket: "platform-b348c.firebasestorage.app",
+  messagingSenderId: "28677932174",
+  appId: "1:28677932174:web:c2c2227faba3093d43f5df",
+  databaseURL: "https://platform-b348c-default-rtdb.firebaseio.com"
+};
+
+// Initialize Firebase
+firebase.initializeApp(firebaseConfig);
+const database = firebase.database();
+
+/* ============================================================
+   DATABASE (Firebase-based with cache)
    ============================================================ */
 const DB = {
-  get(key) {
-    try { return JSON.parse(localStorage.getItem('eng_'+key)) || null; } catch { return null; }
-  },
-  set(key, val) {
-    localStorage.setItem('eng_'+key, JSON.stringify(val));
-  },
-  init() {
-    if (!DB.get('initialized')) {
-      // Admin user
-      DB.set('users', [{
-        id: 'admin', username: 'admin', password: 'admin123',
-        name: 'المدير', role: 'admin', phone: '01000000000',
-        parentPhone: '', grade: '', city: '', createdAt: new Date().toISOString()
-      }]);
-      DB.set('courses', []);
-      DB.set('videos', []);
-      DB.set('exams', []);
-      DB.set('codes', []);
-      DB.set('enrollments', []);
-      DB.set('examResults', []);
-      DB.set('initialized', true);
+  cache: {},
+  listeners: {},
 
-      // Seed sample data
-      DB.seedSampleData();
+  get(key) {
+    return this.cache[key] || null;
+  },
+
+  set(key, val) {
+    this.cache[key] = val;
+    return database.ref('data/' + key).set(val).catch(err => {
+      console.error('Firebase write error:', err);
+      toast('خطأ في حفظ البيانات', 'error');
+    });
+  },
+
+  listen(key, callback) {
+    if (!this.listeners[key]) {
+      database.ref('data/' + key).on('value', (snapshot) => {
+        this.cache[key] = snapshot.val() || null;
+        if (callback) callback(this.cache[key]);
+        // Trigger UI updates for other tabs
+        window.dispatchEvent(new CustomEvent('dbChange', { detail: { key, value: this.cache[key] } }));
+      });
+      this.listeners[key] = true;
     }
+  },
+
+  init() {
+    // Load all data from Firebase and set up listeners
+    const keys = ['users', 'courses', 'videos', 'exams', 'codes', 'enrollments', 'examResults', 'initialized'];
+    
+    keys.forEach(key => {
+      database.ref('data/' + key).once('value', (snapshot) => {
+        this.cache[key] = snapshot.val();
+        
+        // If first time, seed data
+        if (key === 'initialized' && !snapshot.val()) {
+          this.seedInitialData();
+        }
+      });
+      
+      // Set up real-time listener
+      this.listen(key);
+    });
+  },
+
+  seedInitialData() {
+    // Admin user
+    DB.set('users', [{
+      id: 'admin', username: 'admin', password: 'admin123',
+      name: 'المدير', role: 'admin', phone: '01000000000',
+      parentPhone: '', grade: '', city: '', createdAt: new Date().toISOString()
+    }]);
+    DB.set('courses', []);
+    DB.set('videos', []);
+    DB.set('exams', []);
+    DB.set('codes', []);
+    DB.set('enrollments', []);
+    DB.set('examResults', []);
+    DB.set('initialized', true);
+
+    // Seed sample data
+    this.seedSampleData();
   },
   seedSampleData() {
     const courses = [
@@ -3404,24 +3464,56 @@ function createParticles() {
    INIT
    ============================================================ */
 function init() {
-  DB.init();
-  createParticles();
-  updateHomeStats();
-  renderPublicCourses();
-  updateNavBar();
+  // Show loading indicator
+  const splash = document.createElement('div');
+  splash.id = 'loadingSplash';
+  splash.style.cssText = `
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 9999; flex-direction: column; gap: 20px; color: white;
+    font-family: 'Cairo', sans-serif;
+  `;
+  splash.innerHTML = `
+    <div style="font-size: 2rem">⏳ جاري تحميل البيانات...</div>
+    <div style="width: 50px; height: 50px; border: 3px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 1s linear infinite"></div>
+  `;
+  document.body.appendChild(splash);
 
-  // Check existing session
-  const session = getSession();
-  if (session) {
-    currentUser = session;
-    if (session.role === 'admin') {
-      showPage('page-admin');
-      adminNav('dashboard');
-    } else {
-      showPage('page-student');
-      studentNav('dashboard');
-    }
+  // Add spinner animation
+  if (!document.getElementById('spinnerStyle')) {
+    const style = document.createElement('style');
+    style.id = 'spinnerStyle';
+    style.textContent = '@keyframes spin { to { transform: rotate(360deg) } }';
+    document.head.appendChild(style);
   }
+
+  // Wait for Firebase to load data
+  setTimeout(() => {
+    DB.init();
+    
+    // Give Firebase time to fetch initial data
+    setTimeout(() => {
+      splash.remove();
+      createParticles();
+      updateHomeStats();
+      renderPublicCourses();
+      updateNavBar();
+
+      // Check existing session
+      const session = getSession();
+      if (session) {
+        currentUser = session;
+        if (session.role === 'admin') {
+          showPage('page-admin');
+          adminNav('dashboard');
+        } else {
+          showPage('page-student');
+          studentNav('dashboard');
+        }
+      }
+    }, 1500);
+  }, 100);
 }
 
 init();
