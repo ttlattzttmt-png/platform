@@ -1776,56 +1776,126 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase
-firebase.initializeApp(firebaseConfig);
-const database = firebase.database();
+let database = null;
+try {
+  if (typeof firebase !== 'undefined') {
+    firebase.initializeApp(firebaseConfig);
+    database = firebase.database();
+    console.log('Firebase initialized successfully');
+  }
+} catch (err) {
+  console.error('Firebase initialization error:', err);
+  console.log('Will use localStorage fallback');
+}
 
 /* ============================================================
-   DATABASE (Firebase-based with cache)
+   DATABASE (Firebase-based with localStorage fallback)
    ============================================================ */
 const DB = {
   cache: {},
   listeners: {},
+  useFirebase: true,
 
   get(key) {
-    return this.cache[key] || null;
+    // Try cache first
+    if (this.cache[key] !== undefined) {
+      return this.cache[key];
+    }
+    
+    // Fallback to localStorage
+    try {
+      const val = JSON.parse(localStorage.getItem('eng_' + key));
+      this.cache[key] = val;
+      return val || null;
+    } catch {
+      return null;
+    }
   },
 
   set(key, val) {
     this.cache[key] = val;
-    return database.ref('data/' + key).set(val).catch(err => {
-      console.error('Firebase write error:', err);
-      toast('خطأ في حفظ البيانات', 'error');
-    });
+    
+    // Save to localStorage (always works)
+    try {
+      localStorage.setItem('eng_' + key, JSON.stringify(val));
+    } catch (e) {
+      console.error('localStorage error:', e);
+    }
+    
+    // Try Firebase if available
+    if (this.useFirebase && database) {
+      return database.ref('data/' + key).set(val).catch(err => {
+        console.error('Firebase write error:', err);
+        this.useFirebase = false;
+      });
+    }
+    return Promise.resolve();
   },
 
   listen(key, callback) {
-    if (!this.listeners[key]) {
-      database.ref('data/' + key).on('value', (snapshot) => {
-        this.cache[key] = snapshot.val() || null;
-        if (callback) callback(this.cache[key]);
-        // Trigger UI updates for other tabs
-        window.dispatchEvent(new CustomEvent('dbChange', { detail: { key, value: this.cache[key] } }));
-      });
-      this.listeners[key] = true;
+    if (!this.listeners[key] && this.useFirebase && database) {
+      try {
+        database.ref('data/' + key).on('value', (snapshot) => {
+          this.cache[key] = snapshot.val() || null;
+          if (callback) callback(this.cache[key]);
+          window.dispatchEvent(new CustomEvent('dbChange', { detail: { key, value: this.cache[key] } }));
+        }, (err) => {
+          console.error('Firebase listen error:', err);
+          this.useFirebase = false;
+        });
+        this.listeners[key] = true;
+      } catch (e) {
+        console.error('Firebase setup error:', e);
+        this.useFirebase = false;
+      }
     }
   },
 
   init() {
-    // Load all data from Firebase and set up listeners
+    // Load all data from localStorage or Firebase
     const keys = ['users', 'courses', 'videos', 'exams', 'codes', 'enrollments', 'examResults', 'initialized'];
     
     keys.forEach(key => {
-      database.ref('data/' + key).once('value', (snapshot) => {
-        this.cache[key] = snapshot.val();
-        
-        // If first time, seed data
-        if (key === 'initialized' && !snapshot.val()) {
+      // First try Firebase
+      if (this.useFirebase && database) {
+        try {
+          database.ref('data/' + key).once('value', (snapshot) => {
+            const fbVal = snapshot.val();
+            if (fbVal !== null) {
+              this.cache[key] = fbVal;
+              localStorage.setItem('eng_' + key, JSON.stringify(fbVal));
+            } else {
+              // If no Firebase data, use localStorage
+              const localVal = this.get(key);
+              if (localVal && key === 'initialized') {
+                this.cache[key] = localVal;
+              }
+            }
+            
+            if (key === 'initialized' && !snapshot.val()) {
+              this.seedInitialData();
+            }
+          }).catch(err => {
+            console.error('Firebase init error:', err);
+            this.useFirebase = false;
+            this.cache[key] = this.get(key);
+          });
+        } catch (e) {
+          console.error('Firebase setup error:', e);
+          this.useFirebase = false;
+          this.cache[key] = this.get(key);
+        }
+      } else {
+        this.cache[key] = this.get(key);
+        if (key === 'initialized' && !this.cache[key]) {
           this.seedInitialData();
         }
-      });
+      }
       
-      // Set up real-time listener
-      this.listen(key);
+      // Set up real-time listener if using Firebase
+      if (this.useFirebase) {
+        this.listen(key);
+      }
     });
   },
 
@@ -3464,56 +3534,29 @@ function createParticles() {
    INIT
    ============================================================ */
 function init() {
-  // Show loading indicator
-  const splash = document.createElement('div');
-  splash.id = 'loadingSplash';
-  splash.style.cssText = `
-    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-    background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%);
-    display: flex; align-items: center; justify-content: center;
-    z-index: 9999; flex-direction: column; gap: 20px; color: white;
-    font-family: 'Cairo', sans-serif;
-  `;
-  splash.innerHTML = `
-    <div style="font-size: 2rem">⏳ جاري تحميل البيانات...</div>
-    <div style="width: 50px; height: 50px; border: 3px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 1s linear infinite"></div>
-  `;
-  document.body.appendChild(splash);
-
-  // Add spinner animation
-  if (!document.getElementById('spinnerStyle')) {
-    const style = document.createElement('style');
-    style.id = 'spinnerStyle';
-    style.textContent = '@keyframes spin { to { transform: rotate(360deg) } }';
-    document.head.appendChild(style);
-  }
-
-  // Wait for Firebase to load data
+  // Initialize DB first
+  DB.init();
+  
+  // Create content after small delay to ensure DOM is ready
   setTimeout(() => {
-    DB.init();
-    
-    // Give Firebase time to fetch initial data
-    setTimeout(() => {
-      splash.remove();
-      createParticles();
-      updateHomeStats();
-      renderPublicCourses();
-      updateNavBar();
+    createParticles();
+    updateHomeStats();
+    renderPublicCourses();
+    updateNavBar();
 
-      // Check existing session
-      const session = getSession();
-      if (session) {
-        currentUser = session;
-        if (session.role === 'admin') {
-          showPage('page-admin');
-          adminNav('dashboard');
-        } else {
-          showPage('page-student');
-          studentNav('dashboard');
-        }
+    // Check existing session
+    const session = getSession();
+    if (session) {
+      currentUser = session;
+      if (session.role === 'admin') {
+        showPage('page-admin');
+        adminNav('dashboard');
+      } else {
+        showPage('page-student');
+        studentNav('dashboard');
       }
-    }, 1500);
-  }, 100);
+    }
+  }, 300);
 }
 
 init();
