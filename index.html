@@ -1581,16 +1581,10 @@ tr:hover td { background: var(--hover-bg); }
         <div class="auth-divider">أو</div>
         <div class="auth-switch">ليس لديك حساب؟ <a onclick="showPage('page-register')">أنشئ حساباً الآن</a></div>
         <div class="auth-switch" style="margin-top:0.5rem"><a onclick="goHome()"><i class="fas fa-arrow-right"></i> العودة للرئيسية</a></div>
-        <div style="margin-top:1.5rem;padding:1rem;background:var(--hover-bg);border-radius:10px;font-size:0.8rem;color:var(--text-muted)">
-          <strong style="color:var(--text-secondary)">للتجربة:</strong><br>
-          أدمن: <code>admin</code> / <code>admin123</code><br>
-          طالب: سجّل حساباً جديداً
-        </div>
       </div>
     </div>
   </div>
 </div>
-
 <!-- ============================================
    REGISTER PAGE
    ============================================ -->
@@ -1660,7 +1654,6 @@ tr:hover td { background: var(--hover-bg); }
     </div>
   </div>
 </div>
-
 <!-- ============================================
    STUDENT DASHBOARD
    ============================================ -->
@@ -1761,6 +1754,10 @@ tr:hover td { background: var(--hover-bg); }
   </div>
 </div>
 
+<div style="text-align:center;padding:1rem 0;color:var(--text-muted);font-size:0.9rem;">
+  made by : mohamed alaa
+</div>
+
 <script>
 /* ============================================================
    FIREBASE CONFIGURATION
@@ -1785,11 +1782,10 @@ try {
   }
 } catch (err) {
   console.error('Firebase initialization error:', err);
-  console.log('Will use localStorage fallback');
 }
 
 /* ============================================================
-   DATABASE (Firebase-based with localStorage fallback)
+   DATABASE (Firebase-based)
    ============================================================ */
 const DB = {
   cache: {},
@@ -1797,32 +1793,14 @@ const DB = {
   useFirebase: true,
 
   get(key) {
-    // Try cache first
     if (this.cache[key] !== undefined) {
       return this.cache[key];
     }
-    
-    // Fallback to localStorage
-    try {
-      const val = JSON.parse(localStorage.getItem('eng_' + key));
-      this.cache[key] = val;
-      return val || null;
-    } catch {
-      return null;
-    }
+    return null;
   },
 
   set(key, val) {
     this.cache[key] = val;
-    
-    // Save to localStorage (always works)
-    try {
-      localStorage.setItem('eng_' + key, JSON.stringify(val));
-    } catch (e) {
-      console.error('localStorage error:', e);
-    }
-    
-    // Try Firebase if available
     if (this.useFirebase && database) {
       return database.ref('data/' + key).set(val).catch(err => {
         console.error('Firebase write error:', err);
@@ -1861,14 +1839,7 @@ const DB = {
             const fbVal = snapshot.val();
             if (fbVal !== null) {
               this.cache[key] = fbVal;
-              try { localStorage.setItem('eng_' + key, JSON.stringify(fbVal)); } catch (e) { console.error('localStorage write error:', e); }
-            } else {
-              const localVal = this.get(key);
-              if (localVal !== null) {
-                this.cache[key] = localVal;
-              }
             }
-
             if (key === 'initialized' && !this.cache[key]) {
               this.seedInitialData();
             }
@@ -1876,11 +1847,12 @@ const DB = {
           .catch(err => {
             console.error('Firebase init error:', err);
             this.useFirebase = false;
-            this.cache[key] = this.get(key);
+            if (key === 'initialized' && !this.cache[key]) {
+              this.seedInitialData();
+            }
           });
       }
 
-      this.cache[key] = this.get(key);
       if (key === 'initialized' && !this.cache[key]) {
         this.seedInitialData();
       }
@@ -2013,16 +1985,12 @@ function toast(message, type = 'info') {
 /* ============================================================
    THEME
    ============================================================ */
-let darkMode = localStorage.getItem('theme') === 'dark';
+let darkMode = false;
 function toggleTheme() {
   darkMode = !darkMode;
   document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : '');
-  localStorage.setItem('theme', darkMode ? 'dark' : 'light');
   document.getElementById('themeIcon').className = darkMode ? 'fas fa-sun' : 'fas fa-moon';
 }
-if (darkMode) { document.documentElement.setAttribute('data-theme', 'dark'); document.getElementById('themeIcon').className = 'fas fa-sun'; }
-
-/* ============================================================
    PAGE NAVIGATION
    ============================================================ */
 function showPage(pageId) {
@@ -2042,18 +2010,18 @@ function scrollToSection(id) {
    ============================================================ */
 let currentUser = null;
 function getSession() {
-  const s = localStorage.getItem('eng_session');
+  const s = sessionStorage.getItem('eng_session');
   if (s) {
     try { return JSON.parse(s); } catch {}
   }
   return null;
 }
 function setSession(user) {
-  localStorage.setItem('eng_session', JSON.stringify(user));
+  sessionStorage.setItem('eng_session', JSON.stringify(user));
   currentUser = user;
 }
 function clearSession() {
-  localStorage.removeItem('eng_session');
+  sessionStorage.removeItem('eng_session');
   currentUser = null;
 }
 
